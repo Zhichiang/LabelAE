@@ -2,10 +2,12 @@ import torch
 from config import cfg
 from torch.utils.data import DataLoader
 from dataloader.Cityscapes.CityscapesDataset import CityscapesDataSet
+from dataloader.GTA5.GTA5Dataset import GTA5Dataset
 
 DATASET_NAME_MAP = {
     # 'nyuv2depth': NYUv2DepthDataset,
     'cityscapes': CityscapesDataSet,
+    'gta5': GTA5Dataset,
 }
 
 
