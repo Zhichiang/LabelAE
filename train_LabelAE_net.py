@@ -4,7 +4,9 @@ import torch
 import torch.nn as nn
 
 from trainers.LabelAETrainer import LabelAETrainer
+from trainers.LabelAEv2Trainer import LabelAETrainer as LabelAEv2Trainer
 from dataloader.GenericDataloader import GenericDataloader
+from dataloader.TransferDataloader import TransferDataloader
 
 from utils.workspace_assign import name_assign
 from utils.build_component import get_optimizers, build_model
@@ -34,14 +36,15 @@ def main():
     logger = setup_logger("depth_trainer_logger")
 
     logger.info(pprint.pformat(cfg))
+    os.environ["CUDA_VISIBLE_DEVICES"] = cfg.MODEL.gpu_id
 
     # prepare dataloader
-    dataset = GenericDataloader(cfg.DATASETS.name, split_set=('train', 'val',))
+    dataset = TransferDataloader(cfg.DATASETS.name, split_set=('train', 'val',))
     models = build_model()
     optimizers, lr_decays = get_optimizers(models)
 
     mytrainer = LabelAETrainer(models, optimizers, lr_decays, dataset, sets=cfg.DATASETS.split, gpu_id=cfg.MODEL.gpu_id,
-                               use_load_checkpoint=cfg.MODEL.DEPTH.load_checkpoint_mode, net_type="LabelAE")
+                               use_load_checkpoint=-1, net_type="LabelAE")
 
     net = mytrainer.train()
 

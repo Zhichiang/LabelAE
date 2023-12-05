@@ -64,6 +64,7 @@ _C.MODEL.name = 'multi'
 _C.MODEL.latent_len = 10
 _C.MODEL.select_latent = False
 _C.MODEL.select_layer = False
+_C.MODEL.aeweight = False
 _C.MODEL.workspace = "workspace"
 _C.MODEL.chkpt_dir = _C.MODEL.workspace
 _C.MODEL.logs_dir = _C.MODEL.workspace
@@ -71,18 +72,9 @@ _C.MODEL.use_gpu = True
 _C.MODEL.gpu_id = '0'
 _C.MODEL.gpu_ids = '3'
 
-# ---------------------------------------------------------------------------- #
-# Backbone options
-# ---------------------------------------------------------------------------- #
-# For depth estimation part
-_C.MODEL.DEPTH = AttrDict()
-
-_C.MODEL.DEPTH.backbone = ""
-_C.MODEL.DEPTH.sparse_dots = 500
-_C.MODEL.DEPTH.load_checkpoint_mode = -1
-
-# Depth quantization
-_C.MODEL.DEPTH.depth_feature_dim = 16
+_C.MODEL.domainada = False
+_C.MODEL.pretrained = False
+_C.MODEL.mode = "edge"
 
 # ---------------------------------------------------------------------------- #
 # Solver
@@ -93,6 +85,8 @@ _C.SOLVER.momentum = 0.9
 _C.SOLVER.weight_decay = 0.0005
 _C.SOLVER.base_lr = 0.001
 _C.SOLVER.base_lr_d = 1e-3
+_C.SOLVER.lambda_fd = 1e-3
+_C.SOLVER.edge_r = 0.0
 
 _C.SOLVER.lr_scheduler = 'StepLR'
 _C.SOLVER.num_epochs = 20
@@ -110,8 +104,8 @@ _C.SOLVER.val_calc_each = 1000
 _C.SOLVER.on_device = "182"
 
 # Number of images per batch
-_C.SOLVER.image_per_batch = 16
-_C.SOLVER.val_image_per_batch = 16
+_C.SOLVER.image_per_batch = 4
+_C.SOLVER.val_image_per_batch = 4
 
 # ---------------------------------------------------------------------------- #
 # Specific test options

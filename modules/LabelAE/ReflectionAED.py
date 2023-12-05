@@ -99,43 +99,49 @@ class ReflectionEncoder(nn.Module):
             ConvLayer(num_classes, 64, kernel_size=1, stride=1),
             self.Norm(64, affine=True),
             nn.ReLU(),
-            ConvLayer(64, 64, kernel_size=7, stride=1),
+            ConvLayer(64, 64, kernel_size=7, stride=4),
             self.Norm(64, affine=True),
             self.ReLU(),
         )
 
         self.layer2 = nn.Sequential(
-            ConvLayer(64, 128, kernel_size=3, stride=2),
+            ConvLayer(64, 128, kernel_size=1, stride=1),
+            self.Norm(128, affine=True),
+            nn.ReLU(),
+            ConvLayer(128, 128, kernel_size=7, stride=4),
             self.Norm(128, affine=True),
             self.ReLU(),
         )
 
         self.layer3 = nn.Sequential(
-            ConvLayer(128, 128, kernel_size=3, stride=2),
-            self.Norm(128, affine=True),
-            self.ReLU(),
-        )
-
-        self.layer4 = nn.Sequential(
-            ConvLayer(128, 128, kernel_size=3, stride=2),
-            self.Norm(128, affine=True),
-            self.ReLU(),
-        )
-
-        self.layer5 = nn.Sequential(
-            ConvLayer(128, 128, kernel_size=3, stride=2),
-            self.Norm(128, affine=True),
-            self.ReLU(),
-        )
-
-        self.layer6 = nn.Sequential(
-            ConvLayer(128, 128, kernel_size=3, stride=2),
-            self.Norm(128, affine=True),
-            nn.ReLU(),
             ConvLayer(128, 128, kernel_size=1, stride=1),
             self.Norm(128, affine=True),
             nn.ReLU(),
+            ConvLayer(128, 128, kernel_size=3, stride=2),
+            self.Norm(128, affine=True),
+            self.ReLU(),
         )
+
+        # self.layer4 = nn.Sequential(
+        #     ConvLayer(128, 128, kernel_size=3, stride=2),
+        #     self.Norm(128, affine=True),
+        #     self.ReLU(),
+        # )
+        #
+        # self.layer5 = nn.Sequential(
+        #     ConvLayer(128, 128, kernel_size=3, stride=2),
+        #     self.Norm(128, affine=True),
+        #     self.ReLU(),
+        # )
+
+        # self.layer6 = nn.Sequential(
+        #     ConvLayer(128, 128, kernel_size=3, stride=2),
+        #     self.Norm(128, affine=True),
+        #     nn.ReLU(),
+        #     ConvLayer(128, 128, kernel_size=1, stride=1),
+        #     self.Norm(128, affine=True),
+        #     nn.ReLU(),
+        # )
 
         self.out_layer = ConvLayer(128, num_latent, kernel_size=1, stride=1)
 
@@ -143,9 +149,8 @@ class ReflectionEncoder(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.layer5(x)
-        x = self.layer6(x)
+        # x = self.layer4(x)
+        # x = self.layer5(x)
         x = self.out_layer(x)
 
         if self.select_latent:
@@ -174,41 +179,50 @@ class ReflectionDecoder(nn.Module):
             nn.ReLU(),
         )
 
-        self.layer6 = nn.Sequential(
-            ConvLayer(128, 128, kernel_size=1, stride=1),
-            self.Norm(128, affine=True),
-            nn.ReLU(),
-            UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2),
-            self.Norm(128, affine=True),
-            self.ReLU(),
-        )
+        # self.layer6 = nn.Sequential(
+        #     ConvLayer(128, 128, kernel_size=1, stride=1),
+        #     self.Norm(128, affine=True),
+        #     nn.ReLU(),
+        #     UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2),
+        #     self.Norm(128, affine=True),
+        #     self.ReLU(),
+        # )
 
-        self.layer5 = nn.Sequential(
-            UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2),
-            self.Norm(128, affine=True),
-            self.ReLU(),
-        )
-
-        self.layer4 = nn.Sequential(
-            UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2),
-            self.Norm(128, affine=True),
-            self.ReLU(),
-        )
+        # self.layer5 = nn.Sequential(
+        #     UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2),
+        #     self.Norm(128, affine=True),
+        #     self.ReLU(),
+        # )
+        #
+        # self.layer4 = nn.Sequential(
+        #     UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2),
+        #     self.Norm(128, affine=True),
+        #     self.ReLU(),
+        # )
 
         self.layer3 = nn.Sequential(
             UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2),
+            self.Norm(128, affine=True),
+            nn.ReLU(),
+            ConvLayer(128, 128, kernel_size=1, stride=1),
             self.Norm(128, affine=True),
             self.ReLU(),
         )
 
         self.layer2 = nn.Sequential(
-            UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2),
+            UpsampleConvLayer(128, 128, kernel_size=7, stride=1, upsample=4),
             self.Norm(128, affine=True),
+            nn.ReLU(),
+            ConvLayer(128, 64, kernel_size=1, stride=1),
+            self.Norm(64, affine=True),
             self.ReLU(),
         )
 
         self.layer1 = nn.Sequential(
-            ConvLayer(128, 64, kernel_size=7, stride=1),
+            UpsampleConvLayer(64, 64, kernel_size=7, stride=1, upsample=4),
+            self.Norm(64, affine=True),
+            nn.ReLU(),
+            ConvLayer(64, 64, kernel_size=1, stride=1),
             self.Norm(64, affine=True),
             self.ReLU(),
         )
@@ -217,9 +231,9 @@ class ReflectionDecoder(nn.Module):
 
     def forward(self, x):
         x = self.in_layer(x)
-        x = self.layer6(x)
-        x = self.layer5(x)
-        x = self.layer4(x)
+        # x = self.layer6(x)
+        # x = self.layer5(x)
+        # x = self.layer4(x)
         x = self.layer3(x)
         x = self.layer2(x)
         x = self.layer1(x)

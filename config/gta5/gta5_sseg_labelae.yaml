@@ -1,0 +1,18 @@
+MODEL:
+#  name: "multi"
+#  workspace: "workspace/gta5_sseg_labelae_plain"
+  name: "labelaev2"
+  workspace: "workspace/gta5_sseg_labelaev2_20_0.1"
+SOLVER:
+  image_per_batch: 4    # 8 for resnet34, and 5 for dense_block
+  val_image_per_batch: 1
+  base_lr: 1e-2
+  lr_decay_step: 20
+  lr_decay: 0.1
+  weight_decay: 5e-4
+  # weight_decay: 0.0
+  save_chkpt_each: 1
+  optimizer: Adam
+  writer_sample_each: 1
+  val_writer_sample_each: 1
+

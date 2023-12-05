@@ -59,3 +59,34 @@ class CrossEntropy2dLoss(nn.Module):
         if size_average:
             loss /= mask.data.sum()
         return loss
+
+
+class GANLoss(nn.Module):
+    def __init__(self):
+        super(GANLoss, self).__init__()
+        self.register_buffer('real_label', torch.ones(1))
+        self.register_buffer('fake_label', torch.zeros(1))
+
+        self.bce_loss = nn.BCELoss()
+        self.bce_with_sigmoid = nn.BCEWithLogitsLoss()
+        self.mse_loss = nn.MSELoss()
+
+    def __call__(self, prob: torch.Tensor, real=False, loss_type="vgan"):
+        target = self.real_label if real else self.fake_label
+        target = target.expand(prob.shape)
+        if loss_type == 'wgan':
+            loss = -prob.mean() if real else prob.mean()
+        elif loss_type == 'vgan':
+            prob = F.sigmoid(prob).mean()
+            loss = self.bce_loss(prob, target)
+        elif loss_type == 'vgan-bce':
+            loss = self.bce_with_sigmoid(prob, target)
+        elif loss_type == 'mse':
+            loss = self.mse_loss(prob, target)
+        else:
+            raise NotImplementedError
+        return loss
+
+    def forward(self, prob, real):
+        self.__call__(prob, real)
+

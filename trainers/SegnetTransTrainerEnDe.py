@@ -17,7 +17,9 @@ from utils.error_metrics import MAE, IoURunningScore
 from utils.logger import setup_logger
 from utils.segmap_colorize import decode_segmap
 
-from utils.loss import CrossEntropy2dLoss, CriterionDSN
+from utils.loss import CrossEntropy2dLoss, CriterionDSN, GANLoss
+
+from modules.LabelAE.LabelAEv2 import LabelDecoder
 
 from config import cfg
 
@@ -36,21 +38,30 @@ class SegnetTrainer(BaseTrainer):
                                             use_gpu=cfg.MODEL.use_gpu, workspace_dir=cfg.MODEL.chkpt_dir,
                                             net_type=net_type, gpu_id=gpu_id)
 
-        self.segnet = nets[0]
-        self.optim = optimizers[0]
-        self.lr_decay = lr_schedulers[0]
+        self.segnet, self.decoder, self.d_clf = nets
+        self.optim_seg, self.optim_decoder, self.optim_dclf = optimizers
+        self.lr_decay_seg, self.lr_decay_decoder, self.lr_decay_dclf = lr_schedulers
+
+        if cfg.MODEL.pretrained:
+            checkpoint_dict = torch.load("./pretrained/labelaev2_epoch75.pth.tar")
+            self.decoder.load_state_dict(checkpoint_dict['net'][1])
+            for p in self.decoder.parameters():
+                p.requires_grad = False
+
+        self.decoder = self.decoder.to(self.device)
 
         self.dataset = dataset
         self.dataset_train = iter(dataset.loaders['train'])
+        self.dataset_train_t = iter(dataset.loaders['train_t'])
 
         self.sets = sets
         self.logger = setup_logger(type(self).__name__)
         self.logger.info("Trainer sets: " + str(self.sets))
         self.use_load_checkpoint = use_load_checkpoint
 
-        self.seg_loss = CriterionDSN().to(self.device)
+        self.seg_loss = CrossEntropy2dLoss().to(self.device)
+        self.gan_loss = GANLoss().to(self.device)
         self.val_metrics = IoURunningScore(19)
-        self.upsample_512 = torch.nn.Upsample(size=[512, 1024], mode='bilinear')
 
         self.scalar_summary = dict()
         self.image_summary = dict()
@@ -78,24 +89,74 @@ class SegnetTrainer(BaseTrainer):
         for epoch in tqdm(range(self.epoch, cfg.SOLVER.max_iters + 1), ascii=True):
             self.epoch = epoch
             self.segnet.train(True)
-            self.lr_decay.step()
+            self.lr_decay_dclf.step()
+            self.lr_decay_seg.step()
+            if not cfg.MODEL.pretrained:
+                self.lr_decay_decoder.step()
 
-            data = next(self.dataset_train)
+            try:
+                data = next(self.dataset_train)
+            except StopIteration:
+                print("in iteration {}, catch stop_iteration".format(epoch))
+                self.dataset_train = iter(self.dataset.loaders['train'])
+                data = next(self.dataset_train)
             data = self.data_to_device(data)
             input_rgb, input_seg = data
             input_seg = input_seg.long()
 
-            self.optim.zero_grad()
-            rec_seg = self.segnet(input_rgb)
-            seg_loss = self.seg_loss(rec_seg, input_seg)  # cross entropy loss
-            seg_loss.backward()
-            self.optim.step()
+            try:
+                data_t = next(self.dataset_train_t)
+            except StopIteration:
+                print("in iteration {}, catch stop_iteration".format(epoch))
+                self.dataset_train_t = iter(self.dataset.loaders['train_t'])
+                data_t = next(self.dataset_train_t)
+            data_t = self.data_to_device(data_t)
+            input_rgb_t, input_seg_t = data_t
 
-            pred_map = F.softmax(rec_seg[0], dim=1).data.max(1)[1].cpu().numpy()
+            seg_code = self.segnet(input_rgb)
+            seg_code_t = self.segnet(input_rgb_t)
+
+            # ############################## Discriminator ############################## #
+            if cfg.MODEL.domainada:
+                for p in self.d_clf.parameters():
+                    p.requires_grad = True
+                real_loss = self.gan_loss(self.d_clf(seg_code.detach()), real=True, loss_type='vgan-bce')
+                fake_loss = self.gan_loss(self.d_clf(seg_code_t.detach()), real=False, loss_type='vgan-bce')
+                seg_dis_loss = real_loss + fake_loss
+                self.optim_dclf.zero_grad()
+                seg_dis_loss.backward()
+                self.optim_dclf.step()
+                for p in self.d_clf.parameters():
+                    p.requires_grad = False
+            else:
+                seg_dis_loss = torch.zeros(1).to(self.device)
+
+            # ############################## Generator ############################## #
+            if cfg.MODEL.domainada:
+                sim_loss = self.gan_loss(self.d_clf(seg_code_t), real=True, loss_type='vgan-bce')
+            else:
+                sim_loss = torch.zeros(1).to(self.device)
+
+            rec_seg = self.decoder(seg_code)
+            seg_loss = self.seg_loss(rec_seg, input_seg)  # cross entropy loss
+            total_loss = sim_loss * cfg.SOLVER.lambda_fd + seg_loss
+
+            if not cfg.MODEL.pretrained:
+                self.optim_decoder.zero_grad()
+            self.optim_seg.zero_grad()
+            total_loss.backward()
+            self.optim_seg.step()
+            if not cfg.MODEL.pretrained:
+                self.optim_decoder.step()
+
+            # ############################## Visualization ############################## #
+            pred_map = F.softmax(rec_seg, dim=1).data.max(1)[1].cpu().numpy()
             color_pred = decode_segmap(pred_map)
             color_label = decode_segmap(input_seg.cpu().numpy())
             self.scalar_summary = {
                 'train_loss/seg_loss': seg_loss.item(),
+                'train_loss/seg_dis_loss': seg_dis_loss.item(),
+                'train_loss/sim_loss': sim_loss.item(),
             }
             self.image_summary = {
                 'train/input_rgb': input_rgb[0].clone().cpu().data,
@@ -125,9 +186,9 @@ class SegnetTrainer(BaseTrainer):
                         input_rgb, input_seg = data
                         input_seg = input_seg.long()
 
-                        seg_pred = self.segnet(input_rgb)
+                        seg_code = self.segnet(input_rgb)
+                        seg_pred = self.decoder(seg_code)
                         seg_loss = self.seg_loss(seg_pred, input_seg)  # cross entropy loss
-                        seg_pred = self.upsample_512(seg_pred[0])
 
                         _pred = seg_pred.data.max(1)[1].cpu().numpy()
                         gt = input_seg.data.cpu().numpy()
@@ -165,6 +226,7 @@ class SegnetTrainer(BaseTrainer):
                     self.writer.write_data(scalars=self.scalar_summary, images=None,
                                            epoch=int(epoch / cfg.SOLVER.val_calc_each), batch_idx=-1,
                                            is_print=True, is_train=False)
+                    self.val_metrics.reset()
 
             # save checkpoint
             if self.use_save_checkpoint and self.epoch % cfg.SOLVER.save_chkpt_each == 0:
@@ -173,7 +235,7 @@ class SegnetTrainer(BaseTrainer):
 
         if self.epoch == cfg.SOLVER.num_epochs + 1:
             self.logger.info('Training finished! Inferencing...')
-            self.validation()
+            # self.validation()
             self.write_visual_data()
         else:
             # save the final model

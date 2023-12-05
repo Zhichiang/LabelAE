@@ -17,6 +17,7 @@ from utils.error_metrics import MAE, IoURunningScore
 from utils.logger import setup_logger
 from utils.label_embeding import one_hot_embed_2d
 from utils.segmap_colorize import decode_segmap
+from utils.boundary_gen import BoundaryGenerator
 
 from utils.loss import CrossEntropy2dLoss
 
@@ -47,6 +48,7 @@ class LabelAETrainer(BaseTrainer):
         self.use_load_checkpoint = use_load_checkpoint
 
         self.seg_loss = CrossEntropy2dLoss().to(self.device)
+        self.edge_gen = BoundaryGenerator(kernel_size=3).to(self.device)
 
         self.val_metrics = IoURunningScore(19)
         self.scalar_summary = dict()
@@ -56,12 +58,6 @@ class LabelAETrainer(BaseTrainer):
             self.stats[s + '_loss'] = []
         for metric in error_metrics:
             self.stats[metric] = []
-
-        # 5: pole, 6: light, 7: sign, 11: person, 12: rider, 17:motorcycle, 18: Bycycle
-        self.class_weight = torch.Tensor([1, 1, 1, 1, 1,  # 4
-                                          2, 2, 2, 1, 1,  # 9
-                                          1, 2, 4, 1, 1,  # 14
-                                          1, 1, 4, 10]).float().to(self.device)
 
         # load latest checkpoint
         if self.use_load_checkpoint is not None:
@@ -121,27 +117,34 @@ class LabelAETrainer(BaseTrainer):
 
         for batch_idx, data in enumerate(tqdm(self.dataset.loaders['train'])):
             data = self.data_to_device(data)
-            input_rgb, input_seg = data
-            input_seg = input_seg.long()
+            input_rgb, label_seg = data
+            label_seg = label_seg.long()
+            input_seg = label_seg.clone()
 
             # Encode the seg
-            seg_onehot_tensor = one_hot_embed_2d(input_seg)
+            # seg_onehot_tensor = one_hot_embed_2d(input_seg)
+            input_seg[input_seg == 255] = 19
+            _noise_map = torch.bernoulli(torch.ones_like(input_seg.float()) * 0.9) > 0
+            # input_seg[_noise_map] = torch.randint(0, 19, input_seg.shape).to(input_seg.device)[_noise_map]
+            input_seg[_noise_map] = 19
+            label_edge = self.edge_gen(label_seg)
+
+            input_seg = input_seg[None].transpose(0, 1).float()
+            input_tensor = torch.cat((input_seg, label_edge), dim=1)
 
             self.optim_en.zero_grad()
             self.optim_de.zero_grad()
-            seg_code = self.encoder(seg_onehot_tensor[:, :-1, :, :])
+            seg_code = self.encoder(input_tensor)
             rec_seg = self.decoder(seg_code)
-            if cfg.MODEL.aeweight:
-                seg_loss = self.seg_loss(rec_seg, input_seg, weight=self.class_weight)       # cross entropy loss
-            else:
-                seg_loss = self.seg_loss(rec_seg, input_seg)
+            seg_loss = self.seg_loss(rec_seg, label_seg)                      # cross entropy loss
             seg_loss.backward()
             self.optim_en.step()
             self.optim_de.step()
 
             pred_map = F.softmax(rec_seg, dim=1).data.max(1)[1].cpu().numpy()
             color_pred = decode_segmap(pred_map)
-            color_label = decode_segmap(input_seg.cpu().numpy())
+            color_n_label = decode_segmap(input_seg[0].cpu().numpy())
+            color_label = decode_segmap(label_seg.cpu().numpy())
             avg_seg_code = seg_code.sum(1)
             maxsum_seg_code = (seg_code > 0).int().sum(1).float() / cfg.MODEL.latent_len
             self.scalar_summary = {
@@ -149,7 +152,9 @@ class LabelAETrainer(BaseTrainer):
             }
             self.image_summary = {
                 'train/input_rgb': input_rgb[0].clone().cpu().data,
+                'train/label_edge': label_edge[0].clone().cpu().data,
                 'train/color_pred': torch.tensor(color_pred.transpose((0, 3, 1, 2)))[0],
+                'train/color_noise_target': torch.tensor(color_n_label.transpose((0, 3, 1, 2)))[0],
                 'train/color_target': torch.tensor(color_label.transpose((0, 3, 1, 2)))[0],
                 'train/avg_seg_code': avg_seg_code[0].clone().cpu().data,
                 'train/maxsum_seg_code': maxsum_seg_code[0].clone().cpu().data,
@@ -185,9 +190,13 @@ class LabelAETrainer(BaseTrainer):
                 data = self.data_to_device(data)
                 input_rgb, input_seg = data
                 input_seg = input_seg.long()
-                seg_onehot_tensor = one_hot_embed_2d(input_seg)
+                # seg_onehot_tensor = one_hot_embed_2d(input_seg)
 
-                seg_code = self.encoder(seg_onehot_tensor[:, :-1, :, :])
+                label_edge = self.edge_gen(input_seg)
+                input_seg = input_seg[None].transpose(0, 1).float()
+                input_tensor = torch.cat((input_seg, label_edge), dim=1)
+
+                seg_code = self.encoder(input_tensor)
                 rec_seg = self.decoder(seg_code)
                 seg_loss = self.seg_loss(rec_seg, input_seg)  # cross entropy loss
 
@@ -234,7 +243,6 @@ class LabelAETrainer(BaseTrainer):
             self.writer.write_data(scalars=self.scalar_summary, images=None,
                                    epoch=self.epoch, batch_idx=-1,
                                    is_print=True, is_train=False)
-            self.val_metrics.reset()
 
         return [deepcopy(meters), deepcopy(metric_meter)]
 

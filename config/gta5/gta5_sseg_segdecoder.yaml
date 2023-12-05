@@ -1,16 +1,15 @@
-DATASETS:
-  name: cityscapes
-  split: ("train", "val")
-  root: D:\Datasets\CityScapes
 MODEL:
-  name: "deeplabv3"
-  workspace: "workspace/cityscapes_sseg_deeplabv3"
+#  name: "multi"
+#  workspace: "workspace/gta5_sseg_labelae_plain"
+  name: "resnet_decoder"
+  workspace: "workspace/gta5_sseg_resnet_decoder"
 SOLVER:
-  image_per_batch: 2    # 8 for resnet34, and 5 for dense_block
+  image_per_batch: 4    # 8 for resnet34, and 5 for dense_block
   val_image_per_batch: 1
 
   optimizer: SGD
-  base_lr: 1e-2
+  # base_lr: 1e-2
+  base_lr: 2.5e-4
   weight_decay: 5e-4
   momentum: 0.9
 

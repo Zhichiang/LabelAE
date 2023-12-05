@@ -17,7 +17,9 @@ from utils.error_metrics import MAE, IoURunningScore
 from utils.logger import setup_logger
 from utils.segmap_colorize import decode_segmap
 
-from utils.loss import CrossEntropy2dLoss, CriterionDSN
+from utils.loss import CriterionDSN, GANLoss
+
+from modules.LabelAE.LabelAEv2 import LabelDecoder
 
 from config import cfg
 
@@ -37,8 +39,8 @@ class SegnetTrainer(BaseTrainer):
                                             net_type=net_type, gpu_id=gpu_id)
 
         self.segnet = nets[0]
-        self.optim = optimizers[0]
-        self.lr_decay = lr_schedulers[0]
+        self.optim_seg = optimizers[0]
+        self.lr_decay_seg = lr_schedulers[0]
 
         self.dataset = dataset
         self.dataset_train = iter(dataset.loaders['train'])
@@ -78,19 +80,26 @@ class SegnetTrainer(BaseTrainer):
         for epoch in tqdm(range(self.epoch, cfg.SOLVER.max_iters + 1), ascii=True):
             self.epoch = epoch
             self.segnet.train(True)
-            self.lr_decay.step()
+            self.lr_decay_seg.step()
 
-            data = next(self.dataset_train)
+            try:
+                data = next(self.dataset_train)
+            except StopIteration:
+                print("in iteration {}, catch stop_iteration".format(epoch))
+                self.dataset_train = iter(self.dataset.loaders['train'])
+                data = next(self.dataset_train)
             data = self.data_to_device(data)
             input_rgb, input_seg = data
             input_seg = input_seg.long()
 
-            self.optim.zero_grad()
             rec_seg = self.segnet(input_rgb)
-            seg_loss = self.seg_loss(rec_seg, input_seg)  # cross entropy loss
-            seg_loss.backward()
-            self.optim.step()
+            seg_loss = total_loss = self.seg_loss(rec_seg, input_seg)  # cross entropy loss
 
+            self.optim_seg.zero_grad()
+            total_loss.backward()
+            self.optim_seg.step()
+
+            # ############################## Visualization ############################## #
             pred_map = F.softmax(rec_seg[0], dim=1).data.max(1)[1].cpu().numpy()
             color_pred = decode_segmap(pred_map)
             color_label = decode_segmap(input_seg.cpu().numpy())
@@ -127,8 +136,8 @@ class SegnetTrainer(BaseTrainer):
 
                         seg_pred = self.segnet(input_rgb)
                         seg_loss = self.seg_loss(seg_pred, input_seg)  # cross entropy loss
-                        seg_pred = self.upsample_512(seg_pred[0])
 
+                        seg_pred = self.upsample_512(seg_pred[0])
                         _pred = seg_pred.data.max(1)[1].cpu().numpy()
                         gt = input_seg.data.cpu().numpy()
                         self.val_metrics.update(gt, _pred)
@@ -165,6 +174,7 @@ class SegnetTrainer(BaseTrainer):
                     self.writer.write_data(scalars=self.scalar_summary, images=None,
                                            epoch=int(epoch / cfg.SOLVER.val_calc_each), batch_idx=-1,
                                            is_print=True, is_train=False)
+                    self.val_metrics.reset()
 
             # save checkpoint
             if self.use_save_checkpoint and self.epoch % cfg.SOLVER.save_chkpt_each == 0:
@@ -173,7 +183,7 @@ class SegnetTrainer(BaseTrainer):
 
         if self.epoch == cfg.SOLVER.num_epochs + 1:
             self.logger.info('Training finished! Inferencing...')
-            self.validation()
+            # self.validation()
             self.write_visual_data()
         else:
             # save the final model

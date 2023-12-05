@@ -35,7 +35,6 @@ class BaseTrainer(object):
         self.writer = Summary()
 
         if self.use_gpu and torch.cuda.is_available():
-            os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
             if len(gpu_id) == 1:
                 for idx in range(len(self.nets)):
                     self.nets[idx] = self.nets[idx].to(torch.device('cuda'))
@@ -92,7 +91,7 @@ class BaseTrainer(object):
         if not os.path.exists(chkpt_path):
             os.makedirs(chkpt_path)
 
-        file_path = '{}/{}_epoch{:04d}.pth.tar'.format(chkpt_path, self.net_type, self.epoch)
+        file_path = '{}/{}_epoch{:06d}.pth.tar'.format(chkpt_path, self.net_type, self.epoch)
         torch.save(state, file_path)
 
     def load_checkpoint(self, checkpoint=None):
@@ -113,7 +112,7 @@ class BaseTrainer(object):
                 print('No matching checkpoint file found!\n')
                 return False
         elif isinstance(checkpoint, int):
-            checkpoint_path = '{}/{}_epoch{:04d}.pth.tar'.format(chkpt_path, self.net_type, checkpoint)
+            checkpoint_path = '{}/{}_epoch{:06d}.pth.tar'.format(chkpt_path, self.net_type, checkpoint)
         elif isinstance(checkpoint, str):
             checkpoint_path = os.path.expanduser(checkpoint)
         else:

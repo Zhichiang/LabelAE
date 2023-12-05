@@ -16,6 +16,8 @@ class CityscapesDataSet(Dataset):
             self.root = "D:/Datasets/CityScapes"
         elif cfg.SOLVER.on_device == "163":
             self.root = "/media/data2/datasets/cityscapes"
+        elif cfg.SOLVER.on_device == "162":
+            self.root = "/media/data1/datasets/DepthSemantic/cityscapes"
         else:
             raise NotImplementedError
         if 'train' in split:
@@ -39,6 +41,7 @@ class CityscapesDataSet(Dataset):
             max_iters = None
         else:
             raise NotImplementedError
+        self.split = split
         self.crop_size = crop_size if crop_size is not None else self.crop_size
         self.scale = scale if scale is not None else self.scale
         self.ignore_label = ignore_label
@@ -46,7 +49,7 @@ class CityscapesDataSet(Dataset):
         self.is_mirror = mirror if mirror is not None else self.is_mirror
         # self.mean_bgr = np.array([104.00698793, 116.66876762, 122.67891434])
         self.img_ids = [i_id.strip().split() for i_id in open(list_path)]
-        if not max_iters is None:
+        if max_iters is not None:
             self.img_ids = self.img_ids * int(np.ceil(float(max_iters) / len(self.img_ids)))
         self.files = []
         # for split in ["train", "trainval", "val"]:
@@ -92,6 +95,9 @@ class CityscapesDataSet(Dataset):
             fy, fx = int(image.size[0] * f_scale), int(image.size[1] * f_scale)
             image = image.resize((fy, fx), Image.BICUBIC)
             label = label.resize((fy, fx), Image.NEAREST)
+        if 'val' in self.split:
+            image = image.resize((1024, 512), Image.BICUBIC)
+            label = label.resize((1024, 512), Image.NEAREST)
         image = F.center_crop(image, self.crop_size)
         label = F.center_crop(label, self.crop_size)
         if self.is_mirror and random.random() > 0.5:
